@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 import skills_mcp.server as server
@@ -60,7 +62,11 @@ def test_lifecycle_tool_passes_optional_date(monkeypatch):
 
 def test_all_tools_registered_on_mcp_server():
     try:
-        tool_names = set(server.mcp._tool_manager._tools)
+        tool_names = {t.name for t in asyncio.run(server.mcp.list_tools())}
     except AttributeError:
-        pytest.skip("fastmcp internal tool manager layout changed")
+        # older fastmcp internal layout fallback; if neither works, fail loudly
+        tm = getattr(server.mcp, "_tool_manager", None)
+        if tm is None:
+            pytest.fail("no way to enumerate registered tools on fastmcp")
+        tool_names = {t.name for t in tm._tools.values()}
     assert {"infer_skills", "normalize_skill", "search_taxonomy", "taxonomy_stats", "lifecycle_report"} <= tool_names
