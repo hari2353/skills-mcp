@@ -1,8 +1,22 @@
 import os
+import time
 
+import httpx
 from fastmcp import FastMCP
 
 ENGINE_BASE_URL = os.getenv("SKILLS_ENGINE_URL", "http://127.0.0.1:8000")
+BACKOFF_S = 0.2          # pause between the one retry of an idempotent read
+MAX_INPUT_CHARS = 8000   # infer text beyond this is refused, never truncated
+K_MAX = 50               # search result cap exposed to MCP clients
+
+
+class EngineError(Exception):
+    """The engine rejected the request (4xx) — carries the engine's detail."""
+
+
+class EngineUnavailable(EngineError):
+    """The engine could not be reached (connect/timeout, or 5xx after retry)."""
+
 
 mcp = FastMCP(
     "skills-engine",
@@ -14,36 +28,79 @@ mcp = FastMCP(
 )
 
 
-def _get(path: str, params: dict | None = None) -> dict:
-    import httpx
+def _detail(resp: httpx.Response) -> str:
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict) and payload.get("detail"):
+            return str(payload["detail"])
+    except ValueError:
+        pass
+    return resp.text[:200] or f"HTTP {resp.status_code}"
 
-    resp = httpx.get(f"{ENGINE_BASE_URL}{path}", params=params or {}, timeout=30.0)
-    resp.raise_for_status()
-    return resp.json()
+
+def _request(method: str, path: str, *, params: dict | None = None,
+             payload: dict | None = None) -> dict | list:
+    """One engine call with structured errors; idempotent reads retry once,
+    writes never retry (an inference POST must not double-fire)."""
+    attempts = 2 if method == "GET" else 1
+    url = f"{ENGINE_BASE_URL}{path}"
+    for attempt in range(attempts):
+        try:
+            if method == "GET":
+                resp = httpx.get(url, params=params or {}, timeout=30.0)
+            else:
+                resp = httpx.post(url, json=payload or {}, timeout=60.0)
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as exc:
+            if attempt + 1 < attempts:
+                time.sleep(BACKOFF_S)
+                continue
+            msg = f"engine unreachable at {ENGINE_BASE_URL} ({type(exc).__name__})"
+            raise EngineUnavailable(msg) from exc
+        if resp.status_code >= 500:
+            if attempt + 1 < attempts:
+                time.sleep(BACKOFF_S)
+                continue
+            msg = f"engine {method} {path} failed: HTTP {resp.status_code}"
+            raise EngineUnavailable(msg)
+        if resp.status_code >= 400:
+            raise EngineError(f"engine {method} {path} rejected: {_detail(resp)}")
+        return resp.json()
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
-def _post(path: str, payload: dict) -> dict:
-    import httpx
+def _get(path: str, params: dict | None = None) -> dict | list:
+    return _request("GET", path, params=params)
 
-    resp = httpx.post(f"{ENGINE_BASE_URL}{path}", json=payload, timeout=60.0)
-    resp.raise_for_status()
-    return resp.json()
+
+def _post(path: str, payload: dict) -> dict | list:
+    return _request("POST", path, payload=payload)
 
 
 def infer_skills(text: str, context_type: str = "job_description", locale: str = "en") -> dict:
     """Extract and resolve skills from text. Context types: job_description, job_definition,
     resume, task, reflection, user_signal, content. Returns resolved skills with tier,
     confidence and explanation."""
+    if not text or not text.strip():
+        raise ValueError("text must be non-empty")
+    if len(text) > MAX_INPUT_CHARS:
+        raise ValueError(
+            f"text too long ({len(text)} > {MAX_INPUT_CHARS} chars); "
+            "chunk it upstream — truncation would silently lose skills")
     return _post("/v1/skills/infer", {"text": text, "context_type": context_type, "locale": locale})
 
 
 def normalize_skill(name: str, locale: str = "en") -> dict:
     """Map a raw skill label onto the three-tier taxonomy (custom > external > master)."""
+    if not name or not name.strip():
+        raise ValueError("name must be non-empty")
     return _post("/v1/skills/normalize", {"name": name, "locale": locale})
 
 
 def search_taxonomy(query: str, k: int = 5) -> list:
-    """Semantic search across all taxonomy tiers."""
+    """Semantic search across all taxonomy tiers (k clamped to 1..50)."""
+    if not query or not query.strip():
+        raise ValueError("query must be non-empty")
+    k = max(1, min(int(k), K_MAX))
     return _get("/v1/skills/search", {"q": query, "k": k})
 
 
@@ -58,11 +115,22 @@ def lifecycle_report(today: str | None = None) -> dict:
     return _get("/v1/lifecycle/report", params)
 
 
+def health() -> dict:
+    """Probe the backing skills-engine; never raises — an exploding health
+    check is useless to clients."""
+    try:
+        _get("/health")
+        return {"ok": True, "engine_url": ENGINE_BASE_URL}
+    except Exception as exc:  # health probes must never raise
+        return {"ok": False, "engine_url": ENGINE_BASE_URL, "error": str(exc)}
+
+
 mcp.tool(infer_skills)
 mcp.tool(normalize_skill)
 mcp.tool(search_taxonomy)
 mcp.tool(taxonomy_stats)
 mcp.tool(lifecycle_report)
+mcp.tool(health)
 
 
 if __name__ == "__main__":

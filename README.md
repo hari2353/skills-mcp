@@ -15,6 +15,7 @@ A [FastMCP](https://github.com/jlowin/fastmcp) server that exposes the
 | `search_taxonomy(query, k)` | semantic search across all tiers |
 | `taxonomy_stats()` | counts by tier + lifecycle status |
 | `lifecycle_report(today?)` | proposed actions with reasons (half-life policy) |
+| `health()` | engine connectivity probe — never raises |
 
 ## Run
 
@@ -43,5 +44,17 @@ Wire it into any MCP client config:
 
 Tool functions are plain callables registered onto the FastMCP instance, so tests monkeypatch the transport
 layer (`_get`/`_post`) and assert routing, payloads, and registration without a live engine.
+
+### Client hygiene (market-steal, 2026-11-18)
+
+- **Structured errors** — `EngineError` carries the engine's `detail` (4xx);
+  `EngineUnavailable` names the base URL (connect/timeout, or 5xx after
+  retry). Clients never see raw httpx tracebacks.
+- **Bounded retries** — idempotent GETs retry once after `BACKOFF_S`; POST
+  inference/normalize calls never retry (no double extraction).
+- **Tool-boundary validation** — empty inputs rejected before transport;
+  infer text capped at 8000 chars (refused, not truncated); `search_taxonomy`
+  k clamped to 1..50.
+- **`health()`** — returns `{ok, engine_url[, error]}` and never raises.
 
 MIT
