@@ -3,6 +3,7 @@ import time
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_context
 
 from .diagnostics import Diagnostic
 
@@ -93,6 +94,25 @@ def infer_skills(text: str, context_type: str = "job_description", locale: str =
     return _post("/v1/skills/infer", {"text": text, "context_type": context_type, "locale": locale})
 
 
+async def infer_skills_tool(text: str, context_type: str = "job_description",
+                            locale: str = "en") -> dict:
+    """Extract and resolve skills from text. Context types: job_description, job_definition,
+    resume, task, reflection, user_signal, content. Returns resolved skills with tier,
+    confidence and explanation."""
+    try:
+        ctx = get_context()
+    except RuntimeError:          # direct call / no MCP request in flight
+        ctx = None
+
+    if ctx is not None:
+        await ctx.report_progress(0, 2, "validating input")
+        await ctx.report_progress(1, 2, "calling skills-engine")
+    result = infer_skills(text, context_type, locale)
+    if ctx is not None:
+        await ctx.report_progress(2, 2, "skills resolved")
+    return result
+
+
 def normalize_skill(name: str, locale: str = "en") -> dict:
     """Map a raw skill label onto the three-tier taxonomy (custom > external > master)."""
     if not name or not name.strip():
@@ -132,7 +152,7 @@ def health() -> dict:
                 "error": str(exc), "diagnostic": diag.to_dict()}
 
 
-mcp.tool(infer_skills)
+mcp.tool(infer_skills_tool, name="infer_skills")
 mcp.tool(normalize_skill)
 mcp.tool(search_taxonomy)
 mcp.tool(taxonomy_stats)
