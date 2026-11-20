@@ -56,5 +56,8 @@ layer (`_get`/`_post`) and assert routing, payloads, and registration without a 
   infer text capped at 8000 chars (refused, not truncated); `search_taxonomy`
   k clamped to 1..50.
 - **`health()`** — returns `{ok, engine_url[, error]}` and never raises.
+- **Agent repair contract** — every expected failure carries a stable code, a
+  one-line fix, and a docs pointer (`[SKMCP_INPUT_TOO_LARGE] ... (fix: ...)
+  (docs: docs/diagnostics.md#...)`). Catalog: `docs/diagnostics.md`.
 
 MIT

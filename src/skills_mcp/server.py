@@ -4,13 +4,15 @@ import time
 import httpx
 from fastmcp import FastMCP
 
+from .diagnostics import Diagnostic
+
 ENGINE_BASE_URL = os.getenv("SKILLS_ENGINE_URL", "http://127.0.0.1:8000")
 BACKOFF_S = 0.2          # pause between the one retry of an idempotent read
 MAX_INPUT_CHARS = 8000   # infer text beyond this is refused, never truncated
 K_MAX = 50               # search result cap exposed to MCP clients
 
 
-class EngineError(Exception):
+class EngineError(Diagnostic):
     """The engine rejected the request (4xx) — carries the engine's detail."""
 
 
@@ -55,15 +57,16 @@ def _request(method: str, path: str, *, params: dict | None = None,
                 time.sleep(BACKOFF_S)
                 continue
             msg = f"engine unreachable at {ENGINE_BASE_URL} ({type(exc).__name__})"
-            raise EngineUnavailable(msg) from exc
+            raise EngineUnavailable("SKMCP_ENGINE_UNREACHABLE", msg) from exc
         if resp.status_code >= 500:
             if attempt + 1 < attempts:
                 time.sleep(BACKOFF_S)
                 continue
             msg = f"engine {method} {path} failed: HTTP {resp.status_code}"
-            raise EngineUnavailable(msg)
+            raise EngineUnavailable("SKMCP_ENGINE_5XX", msg)
         if resp.status_code >= 400:
-            raise EngineError(f"engine {method} {path} rejected: {_detail(resp)}")
+            msg = f"engine {method} {path} rejected: {_detail(resp)}"
+            raise EngineError("SKMCP_ENGINE_REJECTED", msg)
         return resp.json()
     raise AssertionError("unreachable")  # pragma: no cover
 
@@ -81,9 +84,10 @@ def infer_skills(text: str, context_type: str = "job_description", locale: str =
     resume, task, reflection, user_signal, content. Returns resolved skills with tier,
     confidence and explanation."""
     if not text or not text.strip():
-        raise ValueError("text must be non-empty")
+        raise Diagnostic("SKMCP_EMPTY_INPUT", "text must be non-empty")
     if len(text) > MAX_INPUT_CHARS:
-        raise ValueError(
+        raise Diagnostic(
+            "SKMCP_INPUT_TOO_LARGE",
             f"text too long ({len(text)} > {MAX_INPUT_CHARS} chars); "
             "chunk it upstream — truncation would silently lose skills")
     return _post("/v1/skills/infer", {"text": text, "context_type": context_type, "locale": locale})
@@ -92,14 +96,14 @@ def infer_skills(text: str, context_type: str = "job_description", locale: str =
 def normalize_skill(name: str, locale: str = "en") -> dict:
     """Map a raw skill label onto the three-tier taxonomy (custom > external > master)."""
     if not name or not name.strip():
-        raise ValueError("name must be non-empty")
+        raise Diagnostic("SKMCP_EMPTY_INPUT", "name must be non-empty")
     return _post("/v1/skills/normalize", {"name": name, "locale": locale})
 
 
 def search_taxonomy(query: str, k: int = 5) -> list:
     """Semantic search across all taxonomy tiers (k clamped to 1..50)."""
     if not query or not query.strip():
-        raise ValueError("query must be non-empty")
+        raise Diagnostic("SKMCP_EMPTY_INPUT", "query must be non-empty")
     k = max(1, min(int(k), K_MAX))
     return _get("/v1/skills/search", {"q": query, "k": k})
 
@@ -122,7 +126,10 @@ def health() -> dict:
         _get("/health")
         return {"ok": True, "engine_url": ENGINE_BASE_URL}
     except Exception as exc:  # health probes must never raise
-        return {"ok": False, "engine_url": ENGINE_BASE_URL, "error": str(exc)}
+        diag = (exc if isinstance(exc, Diagnostic)
+                else Diagnostic("SKMCP_ENGINE_BAD_RESPONSE", str(exc) or type(exc).__name__))
+        return {"ok": False, "engine_url": ENGINE_BASE_URL,
+                "error": str(exc), "diagnostic": diag.to_dict()}
 
 
 mcp.tool(infer_skills)
