@@ -40,6 +40,18 @@ Wire it into any MCP client config:
 }
 ```
 
+## Raw JSON-RPC path
+
+FastMCP stays the default transport. `skills_mcp.raw_protocol` is a stdlib-only
+JSON-RPC 2.0 dispatcher (`initialize`, `tools/list`, `tools/call`) with the
+same tool surface, per-tool scopes and minimal schema validation — useful for
+proving protocol behavior without the SDK:
+
+```python
+server = RawMCPServer([RawTool("echo", "...", schema, "skills:read", handler)])
+server.handle(request, granted_scopes={"skills:read"})
+```
+
 ## Tests
 
 Tool functions are plain callables registered onto the FastMCP instance, so tests monkeypatch the transport
