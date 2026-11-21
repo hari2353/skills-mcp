@@ -52,6 +52,12 @@ server = RawMCPServer([RawTool("echo", "...", schema, "skills:read", handler)])
 server.handle(request, granted_scopes={"skills:read"})
 ```
 
+## Tool-call footprint (Harvard Edge TinyML-Footprint cross-pollination)
+
+`skills_mcp.footprint.tool_call_footprint` summarizes recorded tool calls:
+per-tool counts, distinct tools, argument bytes and error count. No new
+dependency.
+
 ## Tests
 
 Tool functions are plain callables registered onto the FastMCP instance, so tests monkeypatch the transport
