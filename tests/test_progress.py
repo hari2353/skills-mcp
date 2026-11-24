@@ -45,8 +45,12 @@ def test_infer_works_without_an_mcp_context(monkeypatch):
 def test_progress_wrapper_keeps_the_public_tool_set():
     names = {t.name for t in asyncio.run(server.mcp.list_tools())}
     assert names == {
-        "infer_skills", "normalize_skill", "search_taxonomy",
-        "taxonomy_stats", "lifecycle_report", "health",
+        "infer_skills",
+        "normalize_skill",
+        "search_taxonomy",
+        "taxonomy_stats",
+        "lifecycle_report",
+        "health",
     }
 
 
@@ -58,11 +62,13 @@ def test_real_mcp_client_receives_progress(monkeypatch):
 
     async def run():
         async with Client(server.mcp) as client:
+
             async def handler(progress, total, message):
                 seen.append((progress, total, message))
 
-            await client.call_tool("infer_skills", {"text": "python"},
-                                   progress_handler=handler)
+            await client.call_tool(
+                "infer_skills", {"text": "python"}, progress_handler=handler
+            )
 
     asyncio.run(run())
     assert [p for p, _, _ in seen] == [0, 1, 2]

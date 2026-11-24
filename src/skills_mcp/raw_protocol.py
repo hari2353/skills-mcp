@@ -3,6 +3,7 @@
 FastMCP remains the transport. This module proves the protocol-level behavior
 (handshake, schemas, scopes) without the SDK and is used by the tests.
 """
+
 from __future__ import annotations
 
 import json
@@ -31,7 +32,11 @@ class RawTool:
 
 
 def _error(request_id, code: int, message: str) -> dict:
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
+    return {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "error": {"code": code, "message": message},
+    }
 
 
 def _result(request_id, result: dict) -> dict:
@@ -47,13 +52,19 @@ def _valid_type(value: Any, kind: str) -> bool:
 
 
 class RawMCPServer:
-    def __init__(self, tools: list[RawTool], server_name: str = "skills-engine",
-                 version: str = "1.0.0") -> None:
+    def __init__(
+        self,
+        tools: list[RawTool],
+        server_name: str = "skills-engine",
+        version: str = "1.0.0",
+    ) -> None:
         self.tools = {tool.name: tool for tool in tools}
         self.server_name = server_name
         self.version = version
 
-    def handle(self, request: Any, granted_scopes: set[str] | None = None) -> dict | None:
+    def handle(
+        self, request: Any, granted_scopes: set[str] | None = None
+    ) -> dict | None:
         if not isinstance(request, dict) or request.get("jsonrpc") != "2.0":
             return _error(None, -32600, "invalid request")
         if "id" not in request:
@@ -65,25 +76,34 @@ class RawMCPServer:
             return _error(request_id, -32600, "invalid request")
 
         if method == "initialize":
-            return _result(request_id, {
-                "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": self.server_name, "version": self.version},
-            })
+            return _result(
+                request_id,
+                {
+                    "protocolVersion": params.get("protocolVersion", PROTOCOL_VERSION),
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "serverInfo": {"name": self.server_name, "version": self.version},
+                },
+            )
         if method == "tools/list":
-            visible = [t for t in self.tools.values()
-                       if granted_scopes is None or t.scope in granted_scopes]
-            return _result(request_id, {
-                "tools": [
-                    {
-                        "name": t.name,
-                        "description": t.description,
-                        "inputSchema": t.input_schema,
-                        "scope": t.scope,
-                    }
-                    for t in visible
-                ]
-            })
+            visible = [
+                t
+                for t in self.tools.values()
+                if granted_scopes is None or t.scope in granted_scopes
+            ]
+            return _result(
+                request_id,
+                {
+                    "tools": [
+                        {
+                            "name": t.name,
+                            "description": t.description,
+                            "inputSchema": t.input_schema,
+                            "scope": t.scope,
+                        }
+                        for t in visible
+                    ]
+                },
+            )
         if method == "tools/call":
             return self._call(request_id, params, granted_scopes)
         return _error(request_id, -32601, f"method not found: {method}")
@@ -105,15 +125,21 @@ class RawMCPServer:
         try:
             value = tool.handler(arguments)
         except Exception as exc:  # tool failure is a result, not a protocol error
-            return _result(request_id, {
-                "content": [{"type": "text", "text": f"error: {exc}"}],
-                "isError": True,
-            })
+            return _result(
+                request_id,
+                {
+                    "content": [{"type": "text", "text": f"error: {exc}"}],
+                    "isError": True,
+                },
+            )
         text = value if isinstance(value, str) else json.dumps(value, default=str)
-        return _result(request_id, {
-            "content": [{"type": "text", "text": text}],
-            "isError": False,
-        })
+        return _result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": text}],
+                "isError": False,
+            },
+        )
 
     @staticmethod
     def _validate(schema: dict, arguments: dict) -> str | None:
@@ -123,6 +149,10 @@ class RawMCPServer:
                 return f"missing required argument: {name}"
         for name, value in arguments.items():
             spec = properties.get(name)
-            if spec and spec.get("type") in _TYPES and not _valid_type(value, spec["type"]):
+            if (
+                spec
+                and spec.get("type") in _TYPES
+                and not _valid_type(value, spec["type"])
+            ):
                 return f"argument {name} must be {spec['type']}"
         return None

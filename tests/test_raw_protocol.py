@@ -13,45 +13,58 @@ def explode(args):
 
 @pytest.fixture()
 def server():
-    return RawMCPServer([
-        RawTool(
-            name="echo",
-            description="Echo an integer.",
-            input_schema={
-                "type": "object",
-                "required": ["value"],
-                "properties": {"value": {"type": "integer"}},
-            },
-            scope="skills:read",
-            handler=echo,
-        ),
-        RawTool(
-            name="explode",
-            description="Always fails.",
-            input_schema={"type": "object", "properties": {}},
-            scope="skills:write",
-            handler=explode,
-        ),
-    ])
+    return RawMCPServer(
+        [
+            RawTool(
+                name="echo",
+                description="Echo an integer.",
+                input_schema={
+                    "type": "object",
+                    "required": ["value"],
+                    "properties": {"value": {"type": "integer"}},
+                },
+                scope="skills:read",
+                handler=echo,
+            ),
+            RawTool(
+                name="explode",
+                description="Always fails.",
+                input_schema={"type": "object", "properties": {}},
+                scope="skills:write",
+                handler=explode,
+            ),
+        ]
+    )
 
 
 def call(server, name, arguments, scopes=None, request_id=1):
     return server.handle(
-        {"jsonrpc": "2.0", "id": request_id, "method": "tools/call",
-         "params": {"name": name, "arguments": arguments}},
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
         scopes,
     )
 
 
 def test_initialize_handshake(server):
-    response = server.handle({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {"protocolVersion": "2024-11-05"},
-    })
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05"},
+        }
+    )
     assert response["id"] == 1
     assert response["result"]["protocolVersion"] == "2024-11-05"
     assert response["result"]["capabilities"] == {"tools": {"listChanged": False}}
-    assert response["result"]["serverInfo"] == {"name": "skills-engine", "version": "1.0.0"}
+    assert response["result"]["serverInfo"] == {
+        "name": "skills-engine",
+        "version": "1.0.0",
+    }
 
 
 def test_initialize_defaults_protocol_version(server):
@@ -60,7 +73,9 @@ def test_initialize_defaults_protocol_version(server):
 
 
 def test_notifications_return_none(server):
-    assert server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    assert (
+        server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}) is None
+    )
     assert server.handle({"jsonrpc": "2.0", "method": "tools/list"}) is None
 
 
@@ -68,8 +83,9 @@ def test_tools_list_filters_by_scope(server):
     everything = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
     assert {t["name"] for t in everything["result"]["tools"]} == {"echo", "explode"}
 
-    read_only = server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/list"},
-                              {"skills:read"})
+    read_only = server.handle(
+        {"jsonrpc": "2.0", "id": 4, "method": "tools/list"}, {"skills:read"}
+    )
     assert [t["name"] for t in read_only["result"]["tools"]] == ["echo"]
     assert read_only["result"]["tools"][0]["inputSchema"]["required"] == ["value"]
 
@@ -118,10 +134,16 @@ def test_handler_error_becomes_tool_result(server):
 def test_malformed_request(server):
     assert server.handle({})["error"]["code"] == -32600
     assert server.handle("not a request")["error"]["code"] == -32600
-    assert server.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/list",
-                          "params": []})["error"]["code"] == -32600
+    assert (
+        server.handle(
+            {"jsonrpc": "2.0", "id": 6, "method": "tools/list", "params": []}
+        )["error"]["code"]
+        == -32600
+    )
 
 
 def test_id_is_echoed(server):
-    response = server.handle({"jsonrpc": "2.0", "id": "abc-123", "method": "tools/list"})
+    response = server.handle(
+        {"jsonrpc": "2.0", "id": "abc-123", "method": "tools/list"}
+    )
     assert response["id"] == "abc-123"

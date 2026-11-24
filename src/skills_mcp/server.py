@@ -8,9 +8,9 @@ from fastmcp.server.dependencies import get_context
 from .diagnostics import Diagnostic
 
 ENGINE_BASE_URL = os.getenv("SKILLS_ENGINE_URL", "http://127.0.0.1:8000")
-BACKOFF_S = 0.2          # pause between the one retry of an idempotent read
-MAX_INPUT_CHARS = 8000   # infer text beyond this is refused, never truncated
-K_MAX = 50               # search result cap exposed to MCP clients
+BACKOFF_S = 0.2  # pause between the one retry of an idempotent read
+MAX_INPUT_CHARS = 8000  # infer text beyond this is refused, never truncated
+K_MAX = 50  # search result cap exposed to MCP clients
 
 
 class EngineError(Diagnostic):
@@ -41,8 +41,9 @@ def _detail(resp: httpx.Response) -> str:
     return resp.text[:200] or f"HTTP {resp.status_code}"
 
 
-def _request(method: str, path: str, *, params: dict | None = None,
-             payload: dict | None = None) -> dict | list:
+def _request(
+    method: str, path: str, *, params: dict | None = None, payload: dict | None = None
+) -> dict | list:
     """One engine call with structured errors; idempotent reads retry once,
     writes never retry (an inference POST must not double-fire)."""
     attempts = 2 if method == "GET" else 1
@@ -80,7 +81,9 @@ def _post(path: str, payload: dict) -> dict | list:
     return _request("POST", path, payload=payload)
 
 
-def infer_skills(text: str, context_type: str = "job_description", locale: str = "en") -> dict:
+def infer_skills(
+    text: str, context_type: str = "job_description", locale: str = "en"
+) -> dict:
     """Extract and resolve skills from text. Context types: job_description, job_definition,
     resume, task, reflection, user_signal, content. Returns resolved skills with tier,
     confidence and explanation."""
@@ -90,18 +93,23 @@ def infer_skills(text: str, context_type: str = "job_description", locale: str =
         raise Diagnostic(
             "SKMCP_INPUT_TOO_LARGE",
             f"text too long ({len(text)} > {MAX_INPUT_CHARS} chars); "
-            "chunk it upstream — truncation would silently lose skills")
-    return _post("/v1/skills/infer", {"text": text, "context_type": context_type, "locale": locale})
+            "chunk it upstream — truncation would silently lose skills",
+        )
+    return _post(
+        "/v1/skills/infer",
+        {"text": text, "context_type": context_type, "locale": locale},
+    )
 
 
-async def infer_skills_tool(text: str, context_type: str = "job_description",
-                            locale: str = "en") -> dict:
+async def infer_skills_tool(
+    text: str, context_type: str = "job_description", locale: str = "en"
+) -> dict:
     """Extract and resolve skills from text. Context types: job_description, job_definition,
     resume, task, reflection, user_signal, content. Returns resolved skills with tier,
     confidence and explanation."""
     try:
         ctx = get_context()
-    except RuntimeError:          # direct call / no MCP request in flight
+    except RuntimeError:  # direct call / no MCP request in flight
         ctx = None
 
     if ctx is not None:
@@ -146,10 +154,17 @@ def health() -> dict:
         _get("/health")
         return {"ok": True, "engine_url": ENGINE_BASE_URL}
     except Exception as exc:  # health probes must never raise
-        diag = (exc if isinstance(exc, Diagnostic)
-                else Diagnostic("SKMCP_ENGINE_BAD_RESPONSE", str(exc) or type(exc).__name__))
-        return {"ok": False, "engine_url": ENGINE_BASE_URL,
-                "error": str(exc), "diagnostic": diag.to_dict()}
+        diag = (
+            exc
+            if isinstance(exc, Diagnostic)
+            else Diagnostic("SKMCP_ENGINE_BAD_RESPONSE", str(exc) or type(exc).__name__)
+        )
+        return {
+            "ok": False,
+            "engine_url": ENGINE_BASE_URL,
+            "error": str(exc),
+            "diagnostic": diag.to_dict(),
+        }
 
 
 mcp.tool(infer_skills_tool, name="infer_skills")

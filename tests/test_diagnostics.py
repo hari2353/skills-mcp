@@ -59,8 +59,9 @@ def test_engine_unreachable_has_code(monkeypatch, no_sleep) -> None:
 
 
 def test_engine_rejection_has_code(monkeypatch) -> None:
-    monkeypatch.setattr(server.httpx, "get",
-                        lambda *a, **kw: FakeResp(404, {"detail": "unknown skill"}))
+    monkeypatch.setattr(
+        server.httpx, "get", lambda *a, **kw: FakeResp(404, {"detail": "unknown skill"})
+    )
     with pytest.raises(server.EngineError) as exc:
         server.taxonomy_stats()
     assert exc.value.code == "SKMCP_ENGINE_REJECTED"

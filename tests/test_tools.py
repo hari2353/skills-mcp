@@ -69,4 +69,10 @@ def test_all_tools_registered_on_mcp_server():
         if tm is None:
             pytest.fail("no way to enumerate registered tools on fastmcp")
         tool_names = {t.name for t in tm._tools.values()}
-    assert {"infer_skills", "normalize_skill", "search_taxonomy", "taxonomy_stats", "lifecycle_report"} <= tool_names
+    assert {
+        "infer_skills",
+        "normalize_skill",
+        "search_taxonomy",
+        "taxonomy_stats",
+        "lifecycle_report",
+    } <= tool_names

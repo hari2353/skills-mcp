@@ -39,7 +39,9 @@ def no_sleep(monkeypatch):
 
 # ── structured errors + retries ─────────────────────────────────────────────
 class TestEngineErrors:
-    def test_connect_failure_is_structured_and_retried_once(self, monkeypatch, no_sleep) -> None:
+    def test_connect_failure_is_structured_and_retried_once(
+        self, monkeypatch, no_sleep
+    ) -> None:
         calls = []
 
         def boom(*a, **kw):
@@ -52,7 +54,9 @@ class TestEngineErrors:
         assert len(calls) == 2  # idempotent GET retried once
         assert no_sleep == [server.BACKOFF_S]
 
-    def test_engine_4xx_carries_detail_without_retry(self, monkeypatch, no_sleep) -> None:
+    def test_engine_4xx_carries_detail_without_retry(
+        self, monkeypatch, no_sleep
+    ) -> None:
         calls = []
 
         def not_found(*a, **kw):
@@ -143,7 +147,9 @@ class TestToolValidation:
 # ── health tool ─────────────────────────────────────────────────────────────
 class TestHealthTool:
     def test_health_ok(self, monkeypatch) -> None:
-        monkeypatch.setattr(server.httpx, "get", lambda *a, **kw: FakeResp(200, {"status": "ok"}))
+        monkeypatch.setattr(
+            server.httpx, "get", lambda *a, **kw: FakeResp(200, {"status": "ok"})
+        )
         result = server.health()
         assert result["ok"] is True and result["engine_url"] == server.ENGINE_BASE_URL
 
